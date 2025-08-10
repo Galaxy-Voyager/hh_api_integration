@@ -15,5 +15,12 @@ htmlcov/
 .env
 .venv/poetry.lock
 
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "--cov=src --cov-report=term"
+
 
 data/vacancies.json
+data/test_vacancies.json
+.pytest_cache/
