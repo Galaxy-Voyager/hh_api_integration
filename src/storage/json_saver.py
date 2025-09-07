@@ -3,7 +3,10 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List
 
-from ..models.vacancy import Vacancy
+try:
+    from models.vacancy import Vacancy
+except ImportError:
+    from src.models.vacancy import Vacancy
 
 
 class Storage(ABC):

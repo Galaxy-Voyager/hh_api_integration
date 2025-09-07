@@ -1,15 +1,23 @@
+#!/usr/bin/env python3
+"""
+Главный запускающий файл проекта HH API Integration
+"""
 import os
 import sys
+
+# Добавляем текущую директорию в путь для импортов
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, current_dir)
+
+# Теперь импортируем наши модули
+from src.api.hh_api import HeadHunterAPI
+from src.api.company_api import fetch_companies_data
+from src.models.vacancy import Vacancy
+from src.storage.json_saver import JSONSaver
+from src.database.db_manager import DBManager, DBConfig, setup_database
 from dotenv import load_dotenv
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from api.hh_api import HeadHunterAPI
-from api.company_api import fetch_companies_data
-from models.vacancy import Vacancy
-from storage.json_saver import JSONSaver
-from database.db_manager import DBManager, DBConfig, setup_database
-
+# Загрузка переменных окружения
 load_dotenv()
 
 
@@ -202,56 +210,6 @@ def search_vacancies_by_keyword(db_manager: DBManager):
         print(f"... и еще {len(data) - 10} вакансий")
 
 
-def user_interaction():
-    """Функция взаимодействия с пользователем через консоль"""
-    print("Программа для поиска вакансий на HeadHunter")
-    print("-------------------------------------------\n")
-
-    # Настройка и заполнение БД (только при первом запуске)
-    config = DBConfig.from_env()
-    db_manager = DBManager(config)
-
-    # Проверяем, есть ли данные в БД
-    try:
-        with db_manager.get_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT COUNT(*) FROM vacancies")
-                vacancy_count = cursor.fetchone()[0]
-
-                if vacancy_count == 0:
-                    print("🔄 База данных пустая, начинаем заполнение...")
-                    if not setup_and_fill_database():
-                        return
-                else:
-                    print(f"✅ База данных уже содержит {vacancy_count} вакансий")
-
-    except Exception as e:
-        print(f"❌ Ошибка проверки базы данных: {e}")
-        if not setup_and_fill_database():
-            return
-
-    while True:
-        print("\n" + "=" * 50)
-        print("🎯 ГЛАВНОЕ МЕНЮ")
-        print("=" * 50)
-        print("1. 🔍 Поиск вакансий через HH API")
-        print("2. 📊 Управление базой данных")
-        print("0. 🚪 Выход")
-        print("=" * 50)
-
-        choice = input("Выберите опцию (0-2): ").strip()
-
-        if choice == "1":
-            search_vacancies_via_api()
-        elif choice == "2":
-            db_manager_interface()
-        elif choice == "0":
-            print("👋 До свидания!")
-            break
-        else:
-            print("❌ Неверный выбор. Попробуйте снова.")
-
-
 def search_vacancies_via_api():
     """Поиск вакансий через API (оригинальная функциональность)"""
     hh_api = HeadHunterAPI()
@@ -318,6 +276,81 @@ def search_vacancies_via_api():
         print(f"\nОшибка: {e}")
     finally:
         print("\nПоиск завершен")
+
+
+def user_interaction():
+    """Функция взаимодействия с пользователем через консоль"""
+    print("Программа для поиска вакансий на HeadHunter")
+    print("-------------------------------------------\n")
+
+    # Настройка и заполнение БД (только при первом запуске)
+    config = DBConfig.from_env()
+    db_manager = DBManager(config)
+
+    # Сначала проверяем существование таблиц
+    try:
+        with db_manager.get_connection() as conn:
+            with conn.cursor() as cursor:
+                # Проверяем существование таблицы vacancies
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_schema = 'public' 
+                        AND table_name = 'vacancies'
+                    )
+                """)
+                vacancies_exists = cursor.fetchone()[0]
+
+                if not vacancies_exists:
+                    print("🔄 Таблицы не существуют, создаем базу данных...")
+                    if not setup_database():
+                        print("❌ Не удалось создать базу данных")
+                        return
+
+                    # Заполняем данными
+                    print("📡 Заполняем базу данных данными...")
+                    if not setup_and_fill_database():
+                        print("❌ Не удалось заполнить базу данных")
+                        return
+                else:
+                    # Проверяем есть ли данные
+                    cursor.execute("SELECT COUNT(*) FROM vacancies")
+                    vacancy_count = cursor.fetchone()[0]
+
+                    if vacancy_count == 0:
+                        print("🔄 База данных пустая, заполняем данными...")
+                        if not setup_and_fill_database():
+                            return
+                    else:
+                        print(f"✅ База данных уже содержит {vacancy_count} вакансий")
+
+    except Exception as e:
+        print(f"❌ Ошибка при проверке базы данных: {e}")
+        print("🔄 Пытаемся создать базу данных заново...")
+        if not setup_database() or not setup_and_fill_database():
+            print("❌ Не удалось инициализировать базу данных")
+            return
+
+    while True:
+        print("\n" + "=" * 50)
+        print("🎯 ГЛАВНОЕ МЕНЮ")
+        print("=" * 50)
+        print("1. 🔍 Поиск вакансий через HH API")
+        print("2. 📊 Управление базой данных")
+        print("0. 🚪 Выход")
+        print("=" * 50)
+
+        choice = input("Выберите опцию (0-2): ").strip()
+
+        if choice == "1":
+            search_vacancies_via_api()
+        elif choice == "2":
+            db_manager_interface()
+        elif choice == "0":
+            print("👋 До свидания!")
+            break
+        else:
+            print("❌ Неверный выбор. Попробуйте снова.")
 
 
 if __name__ == "__main__":
